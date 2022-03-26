@@ -202,6 +202,18 @@ def backward_propagation_regularized(AL,Y,caches,lambd):
         grads["dW" + str(l+1)] = dW_temp
         grads["db" + str(l+1)] = db_temp
     return grads
+
+def initialize_adam(parameters):
+    L = len(parameters)//2
+    v={}
+    s ={}
+    for l in range(1,L+1):
+        v["dW" + str(l)] = np.zeros(parameters["W"+str(l)].shape)
+        v["db" + str(l)] = np.zeros(parameters["b"+str(l)].shape)
+        s["dW" + str(l)] = np.zeros(parameters["W"+str(l)].shape)
+        s["db" + str(l)] = np.zeros(parameters["b"+str(l)].shape)
+    return v,s
+
 def update_parameters(params,grads,learning_rate):
     parameters = params.copy()
     L = len(parameters) // 2 
@@ -209,6 +221,77 @@ def update_parameters(params,grads,learning_rate):
         parameters["W" + str(l+1)] = parameters["W" + str(l+1)] - learning_rate*grads["dW" + str(l+1)]
         parameters["b" + str(l+1)] = parameters["b" + str(l+1)] - learning_rate*grads["db" + str(l+1)]
     return parameters
+
+def update_parameters_adam(params,grads,learning_rate,v,s,t,beta1=0.9,beta2=0.999,epsilon=1e-8):
+    parameters = params.copy()
+    L = len(parameters) // 2 
+    v_corrected = {}   
+    s_corrected = {} 
+    for l in range(1,L+1):
+        v["dW" + str(l)] = v["dW" + str(l)]*beta1 + (1-beta1)*grads["dW"+str(l)]
+        v["db" + str(l)] = v["db" + str(l)]*beta1 + (1-beta1)*grads["db"+str(l)]
+
+        v_corrected["dW" + str(l)] = v["dW" + str(l)] /(1-np.power(beta1,t))
+        v_corrected["db" + str(l)] = v["db" + str(l)] /(1-np.power(beta1,t))
+
+        s["dW" + str(l)] = s["dW" + str(l)]*beta2 + (1-beta2)*np.square(grads["dW"+str(l)])
+        s["db" + str(l)] = s["db" + str(l)]*beta2 + (1-beta2)*np.square(grads["db"+str(l)])
+
+        s_corrected["dW" + str(l)] = s["dW" + str(l)] /(1-np.power(beta2,t))
+        s_corrected["db" + str(l)] = s["db" + str(l)] /(1-np.power(beta2,t))
+
+        parameters["W" + str(l)] = parameters["W" + str(l)] - learning_rate * ((v_corrected["dW"+str(l)])/(np.sqrt(s_corrected["dW" + str(l)])+epsilon))
+        parameters["b" + str(l)] = parameters["b" + str(l)] - learning_rate * ((v_corrected["db"+str(l)])/(np.sqrt(s_corrected["db" + str(l)])+epsilon))
+    return parameters,v,s
+
+
+
+def create_mini_batches(X, y):
+    m = X.shape[1]
+    permutation = list(np.random.permutation(m))
+    shuff_X = X[:, permutation]
+    shuff_y = y[:, permutation].reshape((2, m))
+    
+    batches =[]
+    batch_num = m // 32
+    for i in range(batch_num):
+        mini_batch_X = shuff_X[:,i*32:(i+1)*32]
+        mini_batch_Y = shuff_y[:,i*32:(i+1)*32]
+        mini_batch =(mini_batch_X,mini_batch_Y)
+        batches.append(mini_batch)
+    if not m%32 ==0:
+        mini_batch_X = shuff_X[:,batch_num*32:]
+        mini_batch_Y = shuff_y[:,batch_num*32:]
+        mini_batch =(mini_batch_X,mini_batch_Y)
+        batches.append(mini_batch)
+    return batches
+
+def mini_batch_train(X, Y, layers_dims, learning_rate = 0.00075, num_iterations = 3000, print_cost=False,lambd=0.01):
+    costs = []
+    parameters = random_init_parameters(layers_dims)
+    m = X.shape[1]
+    batch_number = m//32
+    t=0
+    if not m%32 ==0:
+        batch_number +=1
+    for i in range(0, num_iterations):
+        cost = 0
+        mini_batches = create_mini_batches(X,Y)
+        for mini_batch in mini_batches:
+            batch_X,batch_y=mini_batch
+            AL, caches = forward_propagation(batch_X,parameters)
+            cost += calculate_cost_regularized(AL,batch_y,parameters,lambd)
+            grads = backward_propagation_regularized(AL,batch_y,caches,lambd) 
+            t = t+1
+            parameters= update_parameters(parameters,grads,learning_rate)
+        if print_cost and i % 100 == 0 or i == num_iterations - 1:
+            print("Cost after iteration {}: {}".format(i, np.squeeze(cost/batch_number)))
+        if i % 100 == 0 or i == num_iterations:
+            costs.append(cost/batch_number)
+        if np.any(cost <= 0.015):
+            break
+     
+    return parameters, costs
 
 def batch_train(X, Y, layers_dims, learning_rate = 0.0075, num_iterations = 3000, print_cost=False,lambd=0.01):
     costs = []
@@ -239,7 +322,7 @@ def train_model(learning_rate,iter_n,layer_ns,n_p,train_size,batch_type):
     if batch_type =="batch":
         parameters,costs = batch_train(X_train,Y_train,layer_ns,learning_rate,iter_n,True)
     elif batch_type =="mini-batch":
-        parameters,costs = mini_batch_train()
+        parameters,costs = mini_batch_train(X_train,Y_train,layer_ns,learning_rate,iter_n,True)
     pred = (predict(X_train,Y_train,parameters)>0.5).astype(int)
     print("accuracy on training set = %",100-(100*np.sum(abs(Y_train-pred),axis=1))/train_size)
 
@@ -308,8 +391,8 @@ def cost_graph(costs):
     plt.show()
 
 n_p = 100
-layer_ns = [3*n_p*n_p,20, 2] 
-costs = train_model(0.002,40000,layer_ns,n_p,1000,"batch")
+layer_ns = [3*n_p*n_p,80,20, 2] 
+costs = train_model(0.0005,1000,layer_ns,n_p,200,"mini-batch")
 cost_graph(costs)
 check_accuracy(0.5)
 #show_images(n_p)
