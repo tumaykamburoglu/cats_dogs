@@ -271,6 +271,7 @@ def mini_batch_train(X, Y, layers_dims, learning_rate = 0.00075, num_iterations 
     parameters = random_init_parameters(layers_dims)
     m = X.shape[1]
     batch_number = m//32
+    v,s = initialize_adam(parameters)
     t=0
     if not m%32 ==0:
         batch_number +=1
@@ -283,7 +284,7 @@ def mini_batch_train(X, Y, layers_dims, learning_rate = 0.00075, num_iterations 
             cost += calculate_cost_regularized(AL,batch_y,parameters,lambd)
             grads = backward_propagation_regularized(AL,batch_y,caches,lambd) 
             t = t+1
-            parameters= update_parameters(parameters,grads,learning_rate)
+            parameters,v,s= update_parameters_adam(parameters,grads,learning_rate,v,s,t)
         if print_cost and i % 100 == 0 or i == num_iterations - 1:
             print("Cost after iteration {}: {}".format(i, np.squeeze(cost/batch_number)))
         if i % 100 == 0 or i == num_iterations:
@@ -392,7 +393,7 @@ def cost_graph(costs):
 
 n_p = 100
 layer_ns = [3*n_p*n_p,80,20, 2] 
-costs = train_model(0.0005,1000,layer_ns,n_p,200,"mini-batch")
+costs = train_model(0.00001,1000,layer_ns,n_p,200,"mini-batch")
 cost_graph(costs)
 check_accuracy(0.5)
 #show_images(n_p)
